@@ -2,7 +2,6 @@ package org.example.prediction.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +17,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Duration;
-  
 
 @Configuration
 @EnableCaching
@@ -34,40 +32,41 @@ public class RedisConfig {
     @Bean
     public LettuceConnectionFactory redisConnectionFactory() {
         RedisStandaloneConfiguration configuration =
-            new RedisStandaloneConfiguration(redisHost, redisPort);
+                new RedisStandaloneConfiguration(redisHost, redisPort);
         return new LettuceConnectionFactory(configuration);
     }
 
-    @Bean
-    @Primary
-    public ObjectMapper redisObjectMapper() {
+    // 1. УБРАЛИ @Bean и @Primary.
+    // Теперь это обычный приватный метод, который не ломает Spring MVC.
+    private ObjectMapper buildRedisObjectMapper() {
         ObjectMapper objectMapper = new ObjectMapper();
-        // Поддержка LocalDate, LocalDateTime
+
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        // Поддержка полиморфизма
         BasicPolymorphicTypeValidator typeValidator =
-            BasicPolymorphicTypeValidator.builder()
-                .allowIfBaseType(Object.class)
-                .build();
+                BasicPolymorphicTypeValidator.builder()
+                        .allowIfBaseType(Object.class)
+                        .build();
         objectMapper.activateDefaultTyping(typeValidator,
-                                          ObjectMapper.DefaultTyping.NON_FINAL);
+                ObjectMapper.DefaultTyping.NON_FINAL);
 
         return objectMapper;
     }
 
     @Bean
-    public RedisCacheConfiguration defaultCacheConfig(ObjectMapper redisObjectMapper) {
+    public RedisCacheConfiguration defaultCacheConfig() {
         StringRedisSerializer keySerializer = new StringRedisSerializer();
+
+        // 2. Вызываем наш приватный метод напрямую вот здесь:
         GenericJackson2JsonRedisSerializer valueSerializer =
-            new GenericJackson2JsonRedisSerializer(redisObjectMapper);
+                new GenericJackson2JsonRedisSerializer(buildRedisObjectMapper());
 
         return RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(10))
                 .serializeKeysWith(
-                    RedisSerializationContext.SerializationPair.fromSerializer(keySerializer))
+                        RedisSerializationContext.SerializationPair.fromSerializer(keySerializer))
                 .serializeValuesWith(
-                    RedisSerializationContext.SerializationPair.fromSerializer(valueSerializer));
+                        RedisSerializationContext.SerializationPair.fromSerializer(valueSerializer));
     }
 }

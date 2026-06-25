@@ -3,22 +3,20 @@ package org.example.prediction.web;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.prediction.models.entities.User;
 import org.example.prediction.dto.form.AddPredictionDto;
+import org.example.prediction.models.entities.User;
 import org.example.prediction.repositories.UserRepository;
 import org.example.prediction.services.PredictionService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.Map;
 
 @Slf4j
-@Controller
-@RequestMapping("/predictions")
+@RestController 
+@RequestMapping("/api/predictions") 
 @RequiredArgsConstructor
 public class PredictionController {
 
@@ -27,25 +25,23 @@ public class PredictionController {
 
     @PreAuthorize("isAuthenticated()")
     @PostMapping("/make")
-    public String makePrediction(@Valid
-            @ModelAttribute AddPredictionDto form,
-            Principal principal,
-            RedirectAttributes redirectAttributes
+    public ResponseEntity<?> makePrediction(
+            @Valid @RequestBody AddPredictionDto form, 
+            Principal principal
     ) {
-
         try {
-            String username = principal.getName();
-
-            User user = userRepository.findByUsername(username)
-                            .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+            User user = userRepository.findByUsername(principal.getName())
+                    .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+            
             predictionService.makePrediction(user.getId(), form);
-            redirectAttributes.addFlashAttribute("successMessage", "Предсказание успешно сделано!");
-
+            
+            return ResponseEntity.ok(Map.of("message", "Предсказание успешно сделано!"));
+        } catch (IllegalStateException e) {
+            log.warn("Логическая ошибка при предсказании: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Ошибка при предсказании", e);
-            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Произошла системная ошибка"));
         }
-
-        return "redirect:/events/details/" + form.getEventId();
     }
 }

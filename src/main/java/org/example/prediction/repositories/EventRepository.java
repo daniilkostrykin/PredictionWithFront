@@ -20,4 +20,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     Optional<Event> findByIdWithOptions(@Param("id") Long id);
 
     List<Event> findAllByStatusAndClosesAtBefore(EventStatus status, Instant now);
+
+    @Query("SELECT e FROM Event e JOIN FETCH e.options WHERE e.status = :status AND e.closesAt < :now")
+    List<Event> findPendingEventsWithOptions(@Param("status") EventStatus status, @Param("now") Instant now);
 }

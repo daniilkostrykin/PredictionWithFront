@@ -1,19 +1,21 @@
 package org.example.prediction.web;
-import org.springframework.security.access.prepost.PreAuthorize;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.example.prediction.dto.admin.AdminDashboardViewModel;
 import org.example.prediction.models.entities.Event;
 import org.example.prediction.models.entities.User;
 import org.example.prediction.services.AdminService;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-@Controller
-@RequestMapping("/admin")
+@RestController // 1. Делаем контроллер RESTful
+@RequestMapping("/api/admin") // 2. Меняем путь для API
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
@@ -23,19 +25,20 @@ public class AdminController {
         this.adminService = adminService;
     }
 
-    @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
-    public String adminDashboard(Model model) {
+    @GetMapping("/dashboard")
+    public ResponseEntity<Map<String, Object>> adminDashboard() {
         List<User> allUsers = adminService.getAllUsers();
-
         List<Event> pendingEvents = adminService.getPendingEvents();
-
         AdminDashboardViewModel dashboardStats = adminService.getDashboardStats();
-        
-        model.addAttribute("users", allUsers);
-        model.addAttribute("pendingEvents", pendingEvents);
-        model.addAttribute("dashboardStats", dashboardStats);
-        
-        return "admin";
+        pendingEvents.forEach(e -> {
+            System.out.println("Событие: " + e.getTitle() + ", Опций: " + (e.getOptions() != null ? e.getOptions().size() : "NULL"));
+        });
+        // 3. Упаковываем всё в JSON вместо передачи в HTML-модель
+        Map<String, Object> response = new HashMap<>();
+        response.put("users", allUsers);
+        response.put("pendingEvents", pendingEvents);
+        response.put("dashboardStats", dashboardStats);
+
+        return ResponseEntity.ok(response);
     }
 }

@@ -1,5 +1,8 @@
 package org.example.prediction.models.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -28,6 +31,7 @@ public class Event extends BaseEntity{
 
     @BatchSize(size = 20)
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private List<EventOption> options;
 
     @Column(name = "closes_at", nullable = false)

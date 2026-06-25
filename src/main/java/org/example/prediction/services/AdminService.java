@@ -28,10 +28,8 @@ public class AdminService {
     }
 
     public List<Event> getPendingEvents() {
-        return eventRepository.findAll()
-                .stream()
-                .filter(event -> event.getClosesAt().isBefore(Instant.now()) && event.getStatus() == EventStatus.ACTIVE)
-                .toList();
+        // Ищем события, которые планировщик уже перевел в CLOSED
+        return eventRepository.findPendingEventsWithOptions(EventStatus.CLOSED, Instant.now());
     }
 
     public AdminDashboardViewModel getDashboardStats() {

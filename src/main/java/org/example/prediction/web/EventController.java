@@ -1,9 +1,8 @@
 package org.example.prediction.web;
 
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
+import org.example.prediction.dto.ShowDetailedEventInfoDto;
 import org.example.prediction.dto.ShowEventInfoDto;
 import org.example.prediction.dto.form.AddEventDto;
 import org.example.prediction.services.EventService;
@@ -11,155 +10,82 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.security.Principal;
-
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
-@Controller
-@RequestMapping("/events")
+@RestController
+@RequestMapping("/api/events")
 @RequiredArgsConstructor
 public class EventController {
 
     private final EventService eventService;
- 
-
 
     @GetMapping("/all")
-    public String showAllEvents(@RequestParam(value = "page", defaultValue = "0") int page,
-                                @RequestParam(value = "size", defaultValue = "4") int size,
-                                @RequestParam(value = "search", required = false) String search,
-                                @RequestParam(value = "filter", defaultValue = "active") String filter,
-                                Model model) {
+    public ResponseEntity<Map<String, Object>> showAllEvents(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "search", required = false) String search) {
+
         Sort sort = Sort.by("status").ascending().and(Sort.by("closesAt").ascending());
-        
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<ShowEventInfoDto> eventPage = eventService.searchEvents(search, pageable);
 
-        if (eventPage == null) {
-            model.addAttribute("events", java.util.Collections.emptyList());
-            model.addAttribute("currentPage", 0);
-            model.addAttribute("totalPages", 0);
-            model.addAttribute("search", search);
-        } else {
-            model.addAttribute("events", eventPage.getContent());
-            model.addAttribute("currentPage", page);
-            model.addAttribute("totalPages", eventPage.getTotalPages());
-            model.addAttribute("search", search);
-        }
-    
-        return "events/all";
+        Map<String, Object> response = new HashMap<>();
+        response.put("events", eventPage.getContent());
+        response.put("currentPage", eventPage.getNumber());
+        response.put("totalPages", eventPage.getTotalPages());
+
+        return ResponseEntity.ok(response);
     }
 
-      @GetMapping("/details/{id}")
-      public String eventDetails(@PathVariable("id") Long id, Model model, Principal principal) {
-          model.addAttribute("event", eventService.findEventById(id));
-  
-          boolean hasVoted = false;
-          
-          if (principal != null) {
-              String username = principal.getName();
-              hasVoted = eventService.hasUserVoted(username, id);
+    @GetMapping("/details/{id}")
+    public ResponseEntity<Map<String, Object>> eventDetails(@PathVariable("id") Long id, Principal principal) {
+        ShowDetailedEventInfoDto event = eventService.findEventById(id);
 
-              org.example.prediction.models.entities.User currentUser = eventService.getCurrentUserByUsername(username);
-              model.addAttribute("currentUser", currentUser);
-          }
-          
-          model.addAttribute("hasVoted", hasVoted);
-          
-          return "events/details";
-      }
-
-    @ModelAttribute("createEventForm")
-    public AddEventDto initCreateForm(){
-        return new AddEventDto("", "", new java.util.ArrayList<>(java.util.Arrays.asList("", "")), null);
-    }
-
-    @PreAuthorize("hasRole('ADMIN')")
-    @GetMapping("/add")
-    public String showCreateForm() {
-        return "events/add";
-    }
-
-    @PreAuthorize("hasRole('ADMIN')")
-    @PostMapping("/add")
-    public String createEvent(@Valid @ModelAttribute("createEventForm") AddEventDto form,
-                              BindingResult bindingResult,
-                              RedirectAttributes redirectAttributes) {
-
-        log.debug("Обработка POST-запроса на добавление события");                        
-        
-        if (bindingResult.hasErrors()) {
-            log.warn("Ошибки валидации: {}", bindingResult.getAllErrors());
-
-            redirectAttributes.addFlashAttribute("createEventForm", form);
-
-            redirectAttributes.addFlashAttribute(
-                    "org.springframework.validation.BindingResult.createEventForm", 
-                    bindingResult
-            );
-
-            return "redirect:/events/add";
+        boolean hasVoted = false;
+        if (principal != null) {
+            hasVoted = eventService.hasUserVoted(principal.getName(), id);
         }
 
-        eventService.createEvent(form);
-        redirectAttributes.addFlashAttribute("successMessage", "Событие успешно создано!");
-        return "redirect:/events/all";
+        Map<String, Object> response = new HashMap<>();
+        response.put("event", event);
+        response.put("hasVoted", hasVoted);
+
+        return ResponseEntity.ok(response);
     }
 
+    // ==========================================
+    // НОВЫЕ МЕТОДЫ ДЛЯ АДМИНИСТРАТОРА
+    // ==========================================
+
+    @PostMapping("/create")
     @PreAuthorize("hasRole('ADMIN')")
-    @DeleteMapping("delete/{id}")
-    public String deleteEvent(@PathVariable("id") Long id, RedirectAttributes redirectAttributes){
-        log.debug("Удаление события: {}", id);
-        eventService.deleteEvent(id);
-        redirectAttributes.addFlashAttribute("successMessage", "Событие успешно удалено");
-        return "redirect:/events/all";
+    public ResponseEntity<Map<String, Object>> createEvent(@RequestBody AddEventDto addEventDto) {
+        // Предполагается, что в EventService у тебя есть метод addEvent(AddEventDto)
+        eventService.createEvent(addEventDto);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Событие успешно создано");
+        return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/{id}/resolve")
     @PreAuthorize("hasRole('ADMIN')")
-    @PostMapping("/{id}/finish")
-    public String finishEvent(
+    public ResponseEntity<Map<String, Object>> resolveEvent(
             @PathVariable("id") Long eventId,
-            @RequestParam("winningOptionId") Long winningOptionId,
-            Principal principal,
-            RedirectAttributes redirectAttributes
-    ) {
-        try {
-            eventService.finishEvent(eventId, winningOptionId);
-            redirectAttributes.addFlashAttribute("successMessage", "Событие завершено! Результаты пересчитаны.");
-        } catch (org.example.prediction.models.exceptions.EventNotFoundException | IllegalArgumentException e) {
-            log.warn("Ошибка при завершении события {}: {}", eventId, e.getMessage());
-            redirectAttributes.addFlashAttribute("errorMessage", "Ошибка завершения события: " + e.getMessage());
-        } catch (Exception e) {
-            log.error("Непредвиденная ошибка при завершении события {}", eventId, e);
-            redirectAttributes.addFlashAttribute("errorMessage", "Произошла непредвиденная системная ошибка.");
-        }
+            @RequestParam("winningOptionId") Long winningOptionId) {
 
-        return "redirect:/events/details/" + eventId;
-    }
+        // Предполагается, что в EventService у тебя есть метод для ручного завершения события
+        eventService.finishEvent(eventId, winningOptionId);
 
-    @PostMapping(value = "/add", params = "addOption")
-    public String addOption(@ModelAttribute("createEventForm") AddEventDto form) {
-        if (form.getOptions() == null) {
-            form.setOptions(new java.util.ArrayList<>());
-        }
-        form.getOptions().add("");
-        
-        return "events/add";
-    }
-
-     @PostMapping(value = "/add", params = "removeOption")
-    public String removeOption(@ModelAttribute("createEventForm") AddEventDto form,
-                               @RequestParam("removeOption") int index) {
-        if (form.getOptions() != null && form.getOptions().size() > index) {
-            form.getOptions().remove(index);
-        }
-        return "events/add";
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Победитель выбран, итоги подведены");
+        return ResponseEntity.ok(response);
     }
 }

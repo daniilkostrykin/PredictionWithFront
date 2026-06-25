@@ -1,57 +1,40 @@
 package org.example.prediction.web;
 
 import jakarta.validation.Valid;
-import org.example.prediction.dto.form.LoginDto;
-import org.springframework.ui.Model;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.example.prediction.dto.form.UserRegistrationDto;
 import org.example.prediction.services.AuthService;
-import org.springframework.stereotype.Controller;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.*;
 
-@Slf4j
+import java.security.Principal;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@Controller
 public class AuthController {
+
     private final AuthService authService;
 
-    @GetMapping("/login")
-    public String loginPage(Model model, jakarta.servlet.http.HttpServletRequest request) {
-        log.debug("Отображение страницы входа");
-        LoginDto loginDto = new LoginDto("", "");
-
-        model.addAttribute("loginForm", loginDto);
-        
-        String errorMessage = (String) request.getSession().getAttribute("error");
-        if (errorMessage != null) {
-            model.addAttribute("error", errorMessage);
-            request.getSession().removeAttribute("error");
-        }
-
-        return "auth/login";
-    }
-
-    @GetMapping("/register")
-    public String registerPage(Model model) {
-
-        model.addAttribute("userRegistrationDto", new UserRegistrationDto());
-
-        return "auth/register";
-    }
-
     @PostMapping("/register")
-    public String registerUser(@Valid UserRegistrationDto userRegistrationDto, BindingResult bindingResult) {
-        log.info("Попытка регистрации: {}", userRegistrationDto);
-
+    public ResponseEntity<?> registerUser(@Valid @RequestBody UserRegistrationDto dto, BindingResult bindingResult) {
         if (bindingResult.hasErrors()) {
-            return "auth/register";
+            String errorMsg = bindingResult.getAllErrors().get(0).getDefaultMessage();
+            return ResponseEntity.badRequest().body(Map.of("error", errorMsg));
         }
-        authService.register(userRegistrationDto);
-        return "redirect:/login";
-
+        
+        try {
+            authService.register(dto);
+            return ResponseEntity.ok(Map.of("message", "Регистрация успешна"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
-
+    @GetMapping("/me")
+    public ResponseEntity<?> getMe(Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(Map.of("username", principal.getName()));
+    }
 }
