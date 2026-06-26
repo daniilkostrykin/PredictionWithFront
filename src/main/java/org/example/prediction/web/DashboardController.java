@@ -14,7 +14,7 @@ import java.util.Map;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/dashboard") // Меняем базовый путь для API
+@RequestMapping("/api/dashboard")
 @RequiredArgsConstructor
 public class DashboardController {
 
@@ -23,13 +23,11 @@ public class DashboardController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> getDashboard(
             @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "10") int size, // Увеличил дефолтный размер страницы до 10
+            @RequestParam(value = "size", defaultValue = "10") int size,
             @RequestParam(defaultValue = "") String search) {
 
-        // Получаем данные от сервиса (скорее всего возвращается Page<UserStatsDto>)
         var dashboardData = dashboardService.getLeaderboard(search, page, size);
 
-        // Упаковываем данные в JSON-формат
         Map<String, Object> response = new HashMap<>();
         response.put("userStats", dashboardData.getContent());
         response.put("currentPage", dashboardData.getNumber());

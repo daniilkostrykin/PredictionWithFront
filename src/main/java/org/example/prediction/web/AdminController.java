@@ -14,8 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@RestController // 1. Делаем контроллер RESTful
-@RequestMapping("/api/admin") // 2. Меняем путь для API
+@RestController
+@RequestMapping("/api/admin")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
@@ -33,7 +33,6 @@ public class AdminController {
         pendingEvents.forEach(e -> {
             System.out.println("Событие: " + e.getTitle() + ", Опций: " + (e.getOptions() != null ? e.getOptions().size() : "NULL"));
         });
-        // 3. Упаковываем всё в JSON вместо передачи в HTML-модель
         Map<String, Object> response = new HashMap<>();
         response.put("users", allUsers);
         response.put("pendingEvents", pendingEvents);

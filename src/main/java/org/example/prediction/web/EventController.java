@@ -60,14 +60,9 @@ public class EventController {
         return ResponseEntity.ok(response);
     }
 
-    // ==========================================
-    // НОВЫЕ МЕТОДЫ ДЛЯ АДМИНИСТРАТОРА
-    // ==========================================
-
     @PostMapping("/create")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> createEvent(@RequestBody AddEventDto addEventDto) {
-        // Предполагается, что в EventService у тебя есть метод addEvent(AddEventDto)
         eventService.createEvent(addEventDto);
 
         Map<String, Object> response = new HashMap<>();
@@ -81,7 +76,6 @@ public class EventController {
             @PathVariable("id") Long eventId,
             @RequestParam("winningOptionId") Long winningOptionId) {
 
-        // Предполагается, что в EventService у тебя есть метод для ручного завершения события
         eventService.finishEvent(eventId, winningOptionId);
 
         Map<String, Object> response = new HashMap<>();

@@ -29,18 +29,15 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // 1. Включаем CORS и отключаем CSRF (для работы с Vue)
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
 
-            // 2. Настраиваем доступы к API
-            .authorizeHttpRequests(auth -> auth
+                .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**", "/api/events/all", "/error").permitAll()
                 .anyRequest().authenticated()
             )
 
-            // 3. Перехватываем стандартный логин и возвращаем JSON
-            .formLogin(form -> form
+                .formLogin(form -> form
                 .loginProcessingUrl("/api/auth/login")
                 .successHandler((req, res, auth) -> {
                     res.setStatus(200);
@@ -54,13 +51,11 @@ public class SecurityConfig {
                 })
             )
 
-            // 4. Если юзер не авторизован, отдаем 401 ошибку вместо редиректа
-            .exceptionHandling(exc -> exc
+                .exceptionHandling(exc -> exc
                 .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
             )
 
-            // 5. Настройка выхода (logout) с возвратом JSON
-            .logout(logout -> logout
+                .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
                 .logoutSuccessHandler((req, res, auth) -> {
                     res.setStatus(200);
@@ -72,14 +67,12 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // Настройка CORS (разрешаем запросы с Vite)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // В SecurityConfig.java на бэкенде:
         configuration.setAllowedOrigins(List.of("http://127.0.0.1:3000", "http://localhost:3000"));        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true); // Важно для передачи сессии (куки)
+        configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

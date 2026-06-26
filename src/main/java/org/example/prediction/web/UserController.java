@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@RestController // 1. Теперь это REST контроллер
-@RequestMapping("/api/users") // 2. Меняем путь под наш API
+@RestController
+@RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
 
@@ -42,13 +42,11 @@ public class UserController {
                 .filter(p -> p.getStatus() == PredictionStatus.WON)
                 .count();
 
-        // 3. Собираем чистый JSON-ответ
         Map<String, Object> response = new HashMap<>();
         response.put("username", user.getUsername());
         response.put("totalPredictions", totalPredictions);
         response.put("wonPredictions", wonPredictions);
 
-        // 4. Безопасно извлекаем нужные данные из истории, чтобы не сломать Jackson
         List<Map<String, Object>> historyJson = history.stream().map(p -> {
             Map<String, Object> predMap = new HashMap<>();
             predMap.put("id", p.getId());
