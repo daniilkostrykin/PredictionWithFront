@@ -1,0 +1,29 @@
+﻿# Java / Spring Boot
+**/target/
+**/.mvn/
+**/mvnw.cmd
+*.class
+*.jar
+*.war
+
+# Node.js / Vue 3
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+application-local.*
+docker-compose.override.yml
+
+# IDE & OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+HELP.md
