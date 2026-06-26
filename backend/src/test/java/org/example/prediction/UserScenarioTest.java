@@ -89,7 +89,7 @@ class UserScenarioTest {
         Mockito.when(userRepository.findByUsername("simpleUser")).thenReturn(Optional.of(mockUser));
 
         // Настраиваем сервис, чтобы он выбросил исключение при попытке дублирования
-        Mockito.doThrow(new IllegalStateException("Вы уже сделали предсказание на это событие! Повторная ставка запрещена."))
+        Mockito.doThrow(new IllegalStateException("Вы уже сделали предсказание на это событие! Повторное предсказание запрещено."))
                 .when(predictionService).makePrediction(Mockito.eq(1L), Mockito.any());
 
         // Эмулируем отправку формы предсказания

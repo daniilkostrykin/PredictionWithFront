@@ -122,7 +122,7 @@ onMounted(() => {
           <button type="button" class="btn-add" @click="addOption">+ Добавить вариант</button>
         </div>
 
-        <BaseInput v-model="newEvent.closesAt" type="datetime-local" label="Дата окончания приёма ставок" required />
+        <BaseInput v-model="newEvent.closesAt" type="datetime-local" label="Дата окончания приёма предсказаний" required />
 
         <BaseButton type="submit" variant="primary" :disabled="isSubmitting" style="margin-top: 1rem;">
           {{ isSubmitting ? 'Создаем...' : 'Запустить событие' }}

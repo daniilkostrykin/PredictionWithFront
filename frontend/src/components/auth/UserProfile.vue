@@ -33,7 +33,7 @@ onMounted(() => {
       <BaseCard :title="'Профиль: ' + profileData.username">
         <div class="stats">
           <div class="stat-item">
-            <span class="label">Всего ставок:</span>
+            <span class="label">Всего предсказаний:</span>
             <span class="value">{{ profileData.totalPredictions }}</span>
           </div>
           <div class="stat-item">

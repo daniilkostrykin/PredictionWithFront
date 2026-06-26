@@ -1,353 +1,154 @@
-# PredictionApp
+# PredictionApp · backend
 
-Приложение `PredictionApp` — это веб-сервис на Spring Boot для организации прогнозов, ставок и розыгрышей призов.
+Сервис платформы PredictionApp: REST API `/api/**` для SPA-клиента и серверные Thymeleaf-страницы розыгрышей `/prizes`. Стек: Java 21, Spring Boot 3.5 (Web, Security, Data JPA, Validation, Cache), Spring Session Data Redis, PostgreSQL 18, Redis, Lombok, ModelMapper, Maven Wrapper.
 
-## Обзор
+![Java 21](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=spring&logoColor=white) ![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)
 
-Система реализует следующие ключевые сценарии:
+Обзор проекта, сценарии и полный контракт API — в корневом [`README.md`](../README.md).
 
-- регистрация и аутентификация пользователей;
-- просмотр списка событий и детальной информации о каждом событии;
-- создание событий и вариантов прогнозов администраторами;
-- оформление предсказания для зарегистрированных пользователей;
-- управление розыгрышами призов, покупка билетов и автоматический/ручной выбор победителя;
-- панель администратора с базовой статистикой и списком пользователей.
+## Слои
 
-## Архитектура приложения
+| Пакет | Назначение |
+|---|---|
+| `web` | REST-контроллеры, обработчик ошибок |
+| `services` | Бизнес-логика, планировщики |
+| `repositories` | Spring Data JPA |
+| `models.entities` · `models.enums` | Доменная модель и статусы |
+| `dto` (+ `dto.form`, `dto.admin`) | DTO запросов/ответов и формы |
+| `config` | `SecurityConfig` (доступ, сессии, CORS), `RedisConfig` (кэш, TTL), `BeanConfiguration` (`@EnableCaching`, `@EnableJpaAuditing`, `ModelMapper`), `DataInitializer` (демо-данные) |
+| `utils.validation` | Валидаторы: уникальность username/email, совпадение паролей |
 
-Проект разделён на следующие слои:
+Точка входа — `PredictionApplication` (`@SpringBootApplication`, `@EnableScheduling`).
 
-- `org.example.prediction.web` — контроллеры MVC;
-- `org.example.prediction.services` — бизнес-логика;
-- `org.example.prediction.repositories` — JPA-репозитории для доступа к БД;
-- `org.example.prediction.models.entities` — сущности доменной модели;
-- `org.example.prediction.models.enums` — перечисления статусов и ролей;
-- `org.example.prediction.dto` — DTO и формы для представления данных;
-- `org.example.prediction.config` — конфигурация Spring, безопасность, кэширование, инициализация данных.
+## Доменная модель
 
-## Основные модули
+| Сущность | Ключевые поля | Статусы |
+|---|---|---|
+| `User` | username, email, password (BCrypt), role, successfulPredictions, balance | `USER`, `ADMIN` |
+| `Event` | title, description, closesAt (Instant), options | `ACTIVE` → `CLOSED` → `FINISHED` |
+| `EventOption` | text, isCorrectOutcome | — |
+| `Prediction` | user, event, chosenOption | `PLACED`, `WON`, `LOST` |
+| `Prize` | title, ticketPrice, drawDate, winner | `OPEN`, `CLOSED` |
+| `Ticket` | user, prize, createdAt | — |
 
-### `PredictionApplication`
+`BaseEntity` добавляет `id`, `createdAt`, `updatedAt` (JPA-аудит, `@EnableJpaAuditing`).
 
-Точка входа приложения. Класс помечен `@SpringBootApplication` и включает `@EnableScheduling` для выполнения запланированных задач.
+Репозитории Spring Data: `UserRepository` (поиск по логину/email), `EventRepository` (выборка с опциями, события к закрытию), `EventOptionRepository`, `PredictionRepository` (проверки дубликатов, выборки по событию/пользователю), `PrizeRepository` (поиск по названию), `TicketRepository` (билеты приза).
 
-### Конфигурация
+## Бизнес-правила
 
-#### `SecurityConfig`
+### События и прогнозы (`EventServiceImpl`, `PredictionServiceImpl`)
 
-- без авторизации доступны `/api/auth/**`, `/api/events/all` и страница ошибок `/error`;
-- административные операции (`/api/events/create`, `/api/events/{id}/resolve`, `/api/admin/**`) — только роль `ADMIN` (`@PreAuthorize`);
-- аутентификация сессионная: Spring Session хранит сессии в Redis; вход/выход обрабатывает Spring Security по `/api/auth/login` и `/api/auth/logout` (JSON-ответы), неавторизованные запросы к API получают `401 Unauthorized`;
-- CSRF отключён (REST API + SPA); настроен CORS для origins `http://localhost:3000` и `http://127.0.0.1:3000` с `allowCredentials(true)`;
-- использует `BCryptPasswordEncoder`.
+- Создание события: ≥ 2 непустых опций, `closesAt` в будущем; статус `ACTIVE`; кэш списка сбрасывается.
+- Прогноз: пользователь, событие и опция должны существовать; один прогноз на событие; только для `ACTIVE` и до `closesAt` — иначе `IllegalStateException` → `400`.
+- `finishEvent` (итоги): событие не `FINISHED`, опция принадлежит событию; статус `FINISHED`, опция помечается `isCorrectOutcome`; угадавшие прогнозы → `WON` c `successfulPredictions +1` и `balance +1`, остальные → `LOST`.
+- `closeExpiredEvents` — `@Scheduled(fixedRate = 60_000)`: просроченные `ACTIVE` → `CLOSED` (приём предсказаний закрыт, итоги ещё не подведены).
+- `deleteEvent` удаляет событие вместе с его прогнозами.
 
-#### `BeanConfiguration`
+### Розыгрыши (`PrizeServiceImpl`)
 
-- включает кэширование (`@EnableCaching`);
-- включает аудит JPA (`@EnableJpaAuditing`);
-- создаёт `ModelMapper` для конвертации DTO/сущностей.
+- Создание: `ticketPrice ≥ 1`, `drawDate` в будущем, статус `OPEN`.
+- `buyTicket`: розыгрыш `OPEN`, дата не прошла, `balance ≥ ticketPrice`; списывает `balance` и создаёт `Ticket`. Транзакционный метод.
+- `performDraw`: нет билетов → `CLOSED` без победителя; иначе случайный билет → победитель, `CLOSED`.
+- `drawExpiredPrizes` — `@Scheduled(fixedRate = 60_000)`: автоматический розыгрыш просроченных `OPEN`.
 
-#### `RedisConfig`
+### Кэширование
 
-- настраивает Redis в качестве механизма кэша, если `spring.cache.type=redis`;
-- задаёт сериализацию ключей/значений и TTL 10 минут.
+`@Cacheable` — список событий (`events`) и детали по id (`event`); `@CacheEvict` — при создании, удалении, подведении итогов и ежеминутной проверке дедлайнов. Хранилище — Redis, TTL 10 минут (`spring.cache.redis.time-to-live`, сериализация JSON в `RedisConfig`).
 
-#### `DataInitializer`
+### Аутентификация (`AuthServiceImpl`, `AppUserDetailsService`)
 
-- инициализирует начальные данные при старте приложения:
-  - администратор `admin / 12345`;
-  - пользователь `user1 / 12345`;
-  - набор тестовых событий и вариантов;
-- используется при отсутствии данных в базе.
+- регистрация: проверка уникальности username/email, хеширование BCrypt, роль `USER`;
+- вход/выход обрабатывает Spring Security (см. «Безопасность»); текущий пользователь загружается `AppUserDetailsService` по username.
 
-## Доменные сущности
+## Безопасность (`SecurityConfig`)
 
-### `User`
+| Правило | Значение |
+|---|---|
+| `permitAll` | `/api/auth/**`, `/api/events/all`, `/error` |
+| Остальные запросы | `authenticated`; без сессии → `401` (`HttpStatusEntryPoint`) |
+| Админ-операции | `@PreAuthorize("hasRole('ADMIN')")` на эндпоинтах |
+| Логин | formLogin на `/api/auth/login` (form-urlencoded), JSON-обработчики успеха/неудачи |
+| Логаут | `/api/auth/logout`, JSON-ответ |
+| CSRF | отключён (REST + SPA) |
+| CORS | `http://localhost:3000`, `http://127.0.0.1:3000`, `allowCredentials=true` |
+| Пароли | `BCryptPasswordEncoder` |
 
-Поля:
+Сессии хранятся в Redis (Spring Session); cookie `SESSION` — HttpOnly, SameSite=lax, secure=false (dev-настройка в `application.properties`).
 
-- `username`, `email`, `password`;
-- `role` (`USER` или `ADMIN`);
-- `successfulPredictions` — число выигранных прогнозов;
-- `balance` — счёт пользователя для покупки билетов.
-
-### `Event`
-
-Поля:
-
-- `title`, `description`;
-- `status` (`ACTIVE`, `CLOSED`, `FINISHED`);
-- `closesAt` — время закрытия приёма ставок;
-- `options` — набор вариантов прогноза.
-
-### `EventOption`
-
-- содержит текст варианта прогноза;
-- поле `isCorrectOutcome` для пометки победной опции после завершения события.
-
-### `Prediction`
-
-- связь с пользователем, событием и выбранной опцией;
-- статус `PLACED`, `WON`, `LOST`.
-
-### `Prize`
-
-- заголовок, цена билета, дата розыгрыша;
-- статус `OPEN` / `CLOSED`;
-- победитель `winner` после проведения розыгрыша.
-
-### `Ticket`
-
-- связь между пользователем и призом;
-- один билет = одна запись.
-
-### `BaseEntity`
-
-- содержит `id`, `createdAt`, `updatedAt`;
-- аудит создаётся с помощью Spring Data JPA.
-
-## Репозитории
-
-- `UserRepository` — поиск по логину и email;
-- `EventRepository` — поиск событий, выборка с опциями, выбор событий для закрытия;
-- `EventOptionRepository` — CRUD для опций события;
-- `PredictionRepository` — проверка существующих прогнозов, поиск по событию и пользователю;
-- `PrizeRepository` — поиск призов и поиск по названию;
-- `TicketRepository` — выборка билетов для конкретного приза.
-
-## Сервисы
-
-### `AuthServiceImpl`
-
-- регистрирует пользователя;
-- проверяет уникальность имени;
-- шифрует пароль `BCrypt`;
-- сохраняет роль `USER`.
-
-### `EventServiceImpl`
-
-- создаёт событие с опциями;
-- кэширует список `events` и детали события по id;
-- удаляет событие вместе с предсказаниями;
-- закрывает событие (`FINISHED`) и отмечает выигравшую опцию;
-- пересчитывает статусы прогнозов и увеличивает баланс победителя;
-- проверяет, сделал ли пользователь ставку на событие;
-- запускает задачу `closeExpiredEvents()` каждую минуту для автоматического перехода просроченных событий в статус `CLOSED`.
-
-Ключевая логика:
-
-- событие должно иметь минимум 2 варианта;
-- ставку нельзя сделать, если событие `CLOSED` или `FINISHED`;
-- при завершении события статус предсказания меняется на `WON` или `LOST`.
-
-### `PredictionServiceImpl`
-
-- оформляет ставку пользователя на конкретную опцию события;
-- проверяет наличие пользователя, события и выбранной опции;
-- запрещает множественные ставки на одно событие;
-- делает ставку только если событие ещё активно и время ещё не истекло.
-
-### `PrizeServiceImpl`
-
-- создаёт призы с датой розыгрыша и статусом `OPEN`;
-- продаёт билет, списывая баланс пользователя;
-- при розыгрыше выбирает победителя случайным образом из купленных билетов;
-- закрывает приз, если билетов нет;
-- автоматический розыгрыш просроченных призов выполняется каждую минуту.
-
-### `AdminService`
-
-- возвращает список всех пользователей;
-- собирает события, требующие ручного завершения;
-- формирует статистику для панели администратора:
-  - общее число пользователей;
-  - число активных событий;
-  - число предсказаний за текущий день.
-
-## Контроллеры и маршруты
-
-### `AuthController`
-
-- `GET /login` — страница входа;
-- `GET /register` — страница регистрации;
-- `POST /register` — регистрация нового пользователя.
-
-### `EventController`
-
-- `GET /events/all` — список событий с поиском и пагинацией;
-- `GET /events/details/{id}` — подробности события;
-- `GET /events/add` — форма создания события (только `ADMIN`);
-- `POST /events/add` — создание события (только `ADMIN`);
-- `DELETE /events/delete/{id}` — удаление события (только `ADMIN`);
-- `POST /events/{id}/finish` — завершение события и выбор выигравшей опции (только `ADMIN`).
-
-### `PredictionController`
-
-- `POST /predictions/make` — оформление прогноза зарегистрированным пользователем.
-
-### `PrizeController`
-
-- `GET /prizes` — просмотр всех призов;
-- `POST /prizes/buy/{id}` — покупка билета;
-- `POST /prizes/add` — создание приза (только `ADMIN`);
-- `POST /prizes/draw/{id}` — ручной розыгрыш приза (только `ADMIN`).
-
-### `AdminController`
-
-- `GET /admin` — административная панель с базовой статистикой.
-
-## Представление (Thymeleaf)
-
-Основные шаблоны доступны в `src/main/resources/templates`:
-
-- `index.html` — главная страница;
-- `auth/login.html`, `auth/register.html` — формы авторизации;
-- `events/all.html`, `events/details.html`, `events/add.html` — управление событиями;
-- `prizes/all.html` — просмотр и покупка призов;
-- `admin.html` — панель администратора;
-- `users/dashboard.html`, `users/profile.html` — профиль и дашборд пользователя;
-- `error/custom-error.html` — пользовательская страница ошибки;
-- `fragments/head.html`, `fragments/navbar.html`, `fragments/footer.html` — общие фрагменты.
-
-## Конфигурация базы и окружения
-
-`src/main/resources/application.properties` содержит настройки:
-
-- `server.port=8080`;
-- PostgreSQL на `jdbc:postgresql://localhost:5433/prediction_db?currentSchema=prediction_schema`;
-- Redis на `localhost:6379`;
-- `spring.jpa.hibernate.ddl-auto=create` — создание схемы на старте;
-- `spring.sql.init.mode=never` — SQL-файлы `db/schema.sql` и `db/data.sql` не выполняются автоматически;
-- зато данные инициализируются через `DataInitializer`.
-
-## Запуск приложения
-
-1. Поднимите PostgreSQL и Redis через Docker Compose (PostgreSQL — порт **5433**, Redis — **6379**):
-
-```bash
-docker compose up -d
-```
-
-2. Создайте локальный конфиг из шаблона и при необходимости поправьте параметры:
+## Конфигурация
 
 ```bash
 cp src/main/resources/application.properties.example src/main/resources/application.properties
 ```
 
-3. Запустите приложение (порт **8080**):
+Файл добавлен в `.gitignore` — секреты не попадают в репозиторий. Ключевые параметры:
+
+| Свойство | По умолчанию | Комментарий |
+|---|---|---|
+| `server.port` | `8080` | порт REST API и Thymeleaf-страниц |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5433/prediction_db?currentSchema=prediction_schema` | совпадает с docker-compose |
+| `spring.datasource.username` / `password` | `user` / `pass` | учётка контейнера PostgreSQL |
+| `spring.data.redis.host` / `port` | `localhost` / `6379` | сессии + кэш |
+| `spring.cache.type` / `…redis.time-to-live` | `redis` / `600000` | TTL 10 минут |
+| `spring.jpa.hibernate.ddl-auto` | `create` | ⚠ схема пересоздаётся при каждом старте, данные теряются; для продакшена — `validate`/`update` |
+| `spring.sql.init.mode` | `never` | `db/schema.sql` и `db/data.sql` применяет только контейнер PostgreSQL при первом запуске |
+| `server.servlet.session.cookie.*` | `SESSION`, lax, http-only, secure=false | dev-режим |
+
+### docker-compose.yml
+
+- `postgres:18` — `5433:5432`, БД `prediction_db`, учётка `user/pass`, том `prediction-db-data`; скрипты `db/schema.sql` и `db/data.sql` монтируются в `docker-entrypoint-initdb.d` и выполняются только при первом создании тома;
+- `redis:alpine` — `6379:6379`.
+
+## Запуск и тесты
 
 ```bash
-./mvnw spring-boot:run          # Linux/macOS
-mvnw.cmd spring-boot:run        # Windows
+docker compose up -d        # инфраструктура: PostgreSQL :5433, Redis :6379
+./mvnw spring-boot:run      # Linux/macOS
+mvnw.cmd spring-boot:run    # Windows
 ```
 
-или через установленный Maven:
+REST API — `http://localhost:8080/api/**`; фронтенд запускается из `frontend/` (см. корневой [`README.md`](../README.md)).
+
+Тестовые учётные данные (`DataInitializer`, создаются при отсутствии в БД): админ `admin / 12345`, пользователь `user1 / 12345`, набор тестовых событий.
+
+Тесты — JUnit 5 + Mockito, профиль `test`: H2 in-memory (`create-drop`) и `spring.cache.type=none` (Redis-автоконфигурация исключена) — Docker не нужен:
 
 ```bash
-mvn spring-boot:run
+./mvnw test
 ```
 
-4. Запустите фронтенд из папки `frontend/` (подробнее — в корневом `README.md` репозитория):
+Покрытие: `AdminIntegrationTest`, `AdminScenarioTest`, `ConcurrencyTest`, `LogicTest`, `PrizeControllerTest`, `PrizeEdgeCaseTest`, `PrizeServiceTest`, `UserScenarioTest`.
 
-```bash
-npm install
-npm run dev
-```
-
-5. Откройте в браузере:
+## Структура
 
 ```text
-http://localhost:3000
-```
-
-REST API будет доступно на `http://localhost:8080/api/**`.
-
-## Учётные данные для тестирования
-
-- Админ: `admin / 12345`
-- Пользователь: `user1 / 12345`
-
-## Особенности и важные моменты
-
-- В приложении используется ролевой доступ через Spring Security;
-- все CRUD-операции с событиями и призами выполняются через сервисный слой;
-- `EventServiceImpl` и `PrizeServiceImpl` используют `@Scheduled` задачи для автоматизации закрытия ставок и проведения розыгрышей;
-- `ModelMapper` используется для преобразования DTO в сущности и обратно;
-- кэширование событий реализовано через Redis, что ускоряет чтение списка и деталей событий.
-
-## Структура проекта
-
-```
 src/main/java/org/example/prediction
-  ├─ config
-  │    ├─ BeanConfiguration.java
-  │    ├─ DataInitializer.java
-  │    ├─ RedisConfig.java
-  │    └─ SecurityConfig.java
-  ├─ dto
-  │    ├─ ShowEventInfoDto.java
-  │    ├─ ShowDetailedEventInfoDto.java
-  │    ├─ PredictionDto.java
-  │    ├─ OptionDto.java
-  │    ├─ UserStatsDto.java
-  │    ├─ form
-  │    │    ├─ AddEventDto.java
-  │    │    ├─ AddPredictionDto.java
-  │    │    ├─ AddPrizeDto.java
-  │    │    ├─ LoginDto.java
-  │    │    └─ UserRegistrationDto.java
-  │    └─ admin
-  │         └─ AdminDashboardViewModel.java
-  ├─ models
-  │    ├─ entities
-  │    │    ├─ BaseEntity.java
-  │    │    ├─ Event.java
-  │    │    ├─ EventOption.java
-  │    │    ├─ Prediction.java
-  │    │    ├─ Prize.java
-  │    │    ├─ Ticket.java
-  │    │    └─ User.java
-  │    ├─ enums
-  │    │    ├─ EventStatus.java
-  │    │    ├─ PredictionStatus.java
-  │    │    ├─ PrizeStatus.java
-  │    │    └─ UserRole.java
-  │    └─ exceptions
-  │         └─ EventNotFoundException.java
-  ├─ repositories
-  │    ├─ EventOptionRepository.java
-  │    ├─ EventRepository.java
-  │    ├─ PredictionRepository.java
-  │    ├─ PrizeRepository.java
-  │    ├─ TicketRepository.java
-  │    └─ UserRepository.java
-  ├─ services
-  │    ├─ AdminService.java
-  │    ├─ AppUserDetailsService.java
-  │    ├─ AuthService.java
-  │    ├─ AuthServiceImpl.java
-  │    ├─ EventService.java
-  │    ├─ EventServiceImpl.java
-  │    ├─ PredictionService.java
-  │    ├─ PredictionServiceImpl.java
-  │    ├─ PrizeService.java
-  │    ├─ PrizeServiceImpl.java
-  │    └─ DashboardServiceImpl.java
-  └─ web
-       ├─ AdminController.java
-       ├─ AuthController.java
-       ├─ CustomErrorController.java
-       ├─ DashboardController.java
-       ├─ EventController.java
-       ├─ GlobalExceptionHandler.java
-       ├─ HomeController.java
-       ├─ PredictionController.java
-       ├─ PrizeController.java
-       └─ UserController.java
+├── PredictionApplication.java
+├── config/             SecurityConfig, RedisConfig, BeanConfiguration, DataInitializer
+├── web/                Auth, Event, Prediction, Dashboard, User, Admin, Prize, Home,
+│                       CustomError контроллеры + GlobalExceptionHandler
+├── services/           EventServiceImpl, PredictionServiceImpl, PrizeServiceImpl,
+│                       AuthServiceImpl, DashboardServiceImpl, AdminService,
+│                       AppUserDetailsService
+├── repositories/       User, Event, EventOption, Prediction, Prize, Ticket
+├── dto/                ShowEventInfoDto, ShowDetailedEventInfoDto, Option, Prediction,
+│                       UserStats, Dashboard + form/ + admin/
+├── models/
+│   ├── entities/       BaseEntity, User, Event, EventOption, Prediction, Prize, Ticket
+│   ├── enums/          EventStatus, PredictionStatus, PrizeStatus, UserRole
+│   └── exceptions/     EventNotFoundException
+└── utils/validation/   UniqueUsername, UniqueEmail, PasswordMatches
+
+src/main/resources
+├── application.properties.example    шаблон локальной конфигурации
+├── db/schema.sql · db/data.sql       инициализация контейнера PostgreSQL
+├── templates/                        Thymeleaf-страницы: prizes/, events/, auth/,
+│                                     admin.html, users/, error/, fragments/
+└── static/                           favicon, css
 ```
 
-## Рекомендации
+## См. также
 
-- если нужно запускать без PostgreSQL, можно адаптировать `application.properties` под H2;
-- при деплое на продакшн следует отключить `spring.jpa.hibernate.ddl-auto=create` и включить `spring.sql.init.mode=always`/`never` в зависимости от стратегии миграций;
-- для расширения возможностей прогнозов можно добавить множители коэффициентов и учёт ставок пользователей.
+- корневой [`README.md`](../README.md) — сценарии, REST API, быстрый старт;
+- [`frontend/README.md`](../frontend/README.md) — SPA-клиент.

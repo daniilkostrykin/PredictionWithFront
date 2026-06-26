@@ -35,7 +35,7 @@ public class PredictionServiceImpl implements PredictionService {
                 .orElseThrow(() -> new IllegalArgumentException("Событие не найдено"));
         
                 if (predictionRepository.existsByUserAndEvent(user, event)) {
-            throw new IllegalStateException("Вы уже сделали предсказание на это событие! Повторная ставка запрещена.");
+            throw new IllegalStateException("Вы уже сделали предсказание на это событие! Повторное предсказание запрещено.");
         }
         if (event.getStatus() == EventStatus.CLOSED || event.getStatus() == EventStatus.FINISHED) {
             throw new IllegalStateException("Событие уже закрыто");

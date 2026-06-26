@@ -116,7 +116,7 @@ public class AdminIntegrationTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void t3_shouldCorrectlyCalculateRewardsWhenEventFinished() throws Exception {
-        // Пользователь ставит на Option 2
+        // Пользователь делает предсказание на Option 2
         Prediction prediction = new Prediction();
         prediction.setUser(testUser);
         prediction.setEvent(testEvent);
@@ -135,8 +135,8 @@ public class AdminIntegrationTest {
         Event updatedEvent = eventRepository.findById(testEvent.getId()).orElseThrow();
 
         assertEquals(EventStatus.FINISHED, updatedEvent.getStatus(), "Статус события должен стать FINISHED");
-        assertEquals(PredictionStatus.WON, updatedPrediction.getStatus(), "Статус ставки должен стать WON");
-        assertEquals(1, updatedUser.getSuccessfulPredictions(), "Успешные ставки должны увеличиться");
+        assertEquals(PredictionStatus.WON, updatedPrediction.getStatus(), "Статус предсказания должен стать WON");
+        assertEquals(1, updatedUser.getSuccessfulPredictions(), "Успешные предсказания должны увеличиться");
         assertEquals(1, updatedUser.getBalance(), "Баланс должен пополниться");
     }
 

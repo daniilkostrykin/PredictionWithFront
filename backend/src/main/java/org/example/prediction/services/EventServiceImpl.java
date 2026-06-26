@@ -185,7 +185,7 @@ public class EventServiceImpl implements EventService {
         
         if (!expiredEvents.isEmpty()) {
             for (Event event : expiredEvents) {
-                log.info("Событие id={} истекло. Закрываем прием ставок.", event.getId());
+                log.info("Событие id={} истекло. Закрываем прием предсказаний.", event.getId());
                 event.setStatus(EventStatus.CLOSED);
             }
             eventRepository.saveAll(expiredEvents);
